@@ -33,6 +33,7 @@ for url in seed_url:
         print(link["href"])
         url = link["href"]
         if url.startswith("http"):
+            #Figure out scoring priority for links
             pq.put(url) #Add links to priority queue
             print(f"\nHow many items are in the queue? {pq.qsize()}")
         
