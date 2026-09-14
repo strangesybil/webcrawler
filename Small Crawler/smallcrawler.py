@@ -44,6 +44,8 @@ for url in seed_url:
             print(url) #print legitimate links
             #Figure out scoring priority for links
             domain=urlparse(url).netloc #Find url domain name
+            hostname=urlparse(url).hostname #Find url hostname
+            #Find how many times I've seen the hostname
             priority=domain_counts[domain] #How many times have I seen this domain?
             pq.put((priority,url)) #Add links and priority (based on newness) to priority queue - because Python returns smallest number first. 
             print(f"\nHow many items are in the queue? {pq.qsize()}")
