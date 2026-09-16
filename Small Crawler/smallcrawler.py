@@ -7,10 +7,10 @@ import tldextract
 
 #Initialize the queue
 pq= PriorityQueue(maxsize=100) #The queue of URLs to crawl
-hostname_count=defaultdict(int) #How many times have I seen this domain?
 visited_domains=set()#set of domains that have been visited
 superdomain_count=defaultdict(int) #How many times have I seen this superdomain?
 superdomain_visited=set() #set of superdomains that have been visited
+superdomain_subdomains=defaultdict(set) #set of subdomains for each superdomain
 search_query=input("What are you looking for? ")
 seed_url = ["https://bing.com/search"]
 
@@ -44,13 +44,15 @@ for url in seed_url:
     
 while not pq.empty():
     priority,url = pq.get()
-    if url in visited_domains:
+    hostname = urlparse(url).netloc
+    result=tldextract.extract(hostname)
+    superdomain=result.registered_domain
+    if superdomain in visited_domains:
         continue
-
-    visited_domains.add(url)
+    visited_domains.add(superdomain)
     #Try to download pages in html
     try: 
-        response=requests.get(url)
+        response=requests.get(url,timeout=10)
         with open(f"/Users/rae/Documents/source1.html", "w",encoding="utf-8") as f:
                     f.write(response.text)
     except requests.exceptions.RequestException as e:
@@ -63,9 +65,10 @@ while not pq.empty():
 
     #Successful visit and download
     hostname=urlparse(url).netloc
-    hostname_count[hostname]+=1
-    print("Domain",hostname)
-    print("/nPages crawled from this domain:", hostname_count[hostname])
+    result=tldextract.extract(hostname)
+    superdomain=result.registered_domain
+    superdomain_subdomains[superdomain].add(hostname)
+    superdomain_count[superdomain]+=1
 
     #Parse the page and extract links
     soup = BeautifulSoup(response.text, "html.parser")
@@ -75,12 +78,16 @@ while not pq.empty():
                     new_url = link["href"]
                     if not new_url.startswith("http"):
                         continue
-                    if new_url in visited_domains:
+                    new_hostname = urlparse(new_url).netloc
+                    result=tldextract.extract(new_hostname)
+                    new_superdomain=result.registered_domain
+                    superdomain_subdomains[new_superdomain].add(new_hostname)
+                    if new_superdomain in visited_domains:
                         continue
-                    new_domain = urlparse(new_url).netloc
-    
-                    new_priority = hostname_count[new_domain]
+
+                    superdomain_count[new_superdomain]+=1
+                    new_priority = superdomain_count[new_superdomain]
                     pq.put((new_priority,new_url))
     
-    print("Crawling complete.")
-    print("Total unique domains visited:", len(visited_domains))
+print("Crawling complete.")
+print("Total unique domains visited:", len(visited_domains))
