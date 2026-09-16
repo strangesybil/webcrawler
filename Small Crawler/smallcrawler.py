@@ -3,13 +3,13 @@ from bs4 import BeautifulSoup
 from queue import PriorityQueue
 from collections import defaultdict
 from urllib.parse import urljoin, urlparse
+from math import log2
 import tldextract
 
 #Initialize the queue
 pq= PriorityQueue(maxsize=100) #The queue of URLs to crawl
 visited_domains=set()#set of domains that have been visited
 superdomain_count=defaultdict(int) #How many times have I seen this superdomain?
-superdomain_visited=set() #set of superdomains that have been visited
 superdomain_subdomains=defaultdict(set) #set of subdomains for each superdomain
 search_query=input("What are you looking for? ")
 seed_url = ["https://bing.com/search"]
@@ -38,7 +38,10 @@ for url in seed_url:
            result=tldextract.extract(hostname)
            superdomain=result.registered_domain
            superdomain_count[superdomain]+=1
-           priority=superdomain_count[superdomain]
+           p = superdomain_count[superdomain]
+           s = len(superdomain_subdomains[superdomain])
+           combined_score=1/log2(p+2)+1/log2(s+2)
+           priority=-combined_score #negate so it's popped first?
            pq.put((priority,url))
            print(f"\nHow many items are in the queue? {pq.qsize()}")
     
@@ -81,12 +84,14 @@ while not pq.empty():
                     new_hostname = urlparse(new_url).netloc
                     result=tldextract.extract(new_hostname)
                     new_superdomain=result.registered_domain
-                    superdomain_subdomains[new_superdomain].add(new_hostname)
                     if new_superdomain in visited_domains:
                         continue
-
+                    superdomain_subdomains[new_superdomain].add(new_hostname)
                     superdomain_count[new_superdomain]+=1
-                    new_priority = superdomain_count[new_superdomain]
+                    p = superdomain_count[new_superdomain]
+                    s=len(superdomain_subdomains[new_superdomain])
+                    combined_score=1/log2(p+2)+1/log2(s+2)
+                    new_priority = -combined_score
                     pq.put((new_priority,new_url))
     
 print("Crawling complete.")
