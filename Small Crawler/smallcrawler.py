@@ -1,4 +1,5 @@
 import requests
+import os
 from bs4 import BeautifulSoup
 from queue import PriorityQueue
 from collections import defaultdict
@@ -7,8 +8,10 @@ from math import log2
 import tldextract 
 from pybloom_live import BloomFilter 
 from urllib.robotparser import RobotFileParser
+from concurrent.futures import ThreadPoolExecutor
 
 robots_cache = {}
+NUM_WORKERS = 20
 
 def get_robots_parser(hostname):
     if hostname in robots_cache: 
@@ -27,7 +30,7 @@ def get_robots_parser(hostname):
     return rp
 
 headers = {
-    "User-Agent": "RaeCrawler/1.0 (NYU student project)"
+    "User-Agent": "SmallCrawler/1.0 (NYU student project)"
 } 
 
 #Initialize the queue
@@ -35,13 +38,16 @@ pq= PriorityQueue() #The queue of URLs to crawl
 visited_domains_bf=BloomFilter(capacity=10000, error_rate=0.01)#set of domains that have been visited - look at data structures that are thread safe, Bloomfilter, scalable, 10,000 
 superdomain_count=defaultdict(int) #How many times have I seen this superdomain?
 superdomain_subdomains=defaultdict(set) #set of subdomains for each superdomain
+os.makedirs("/Users/rae/Documents/crawled_pages", exist_ok=True) 
+page_count=0 #How many pages crawled, incremented after successful fetch
 search_query=input("What are you looking for? ")
-seed_url = ["https://bing.com/search",
+
+seed_urls = ["https://bing.com/search",
             "https://en.wikipedia.org/w/index.php?search=" + search_query]
 
 
 #Get initial search results from Bing and Wikipedia
-for url in seed_url:
+for url in seed_urls:
     response = requests.get(
         url,
         params={"q": search_query},
@@ -63,27 +69,34 @@ for url in seed_url:
            result=tldextract.extract(hostname)
            superdomain=result.registered_domain
            superdomain_count[superdomain]+=1
+           page_count+=1
+           safe_hostname=hostname.replace(".", "_").replace(":", "_")
+           filename = f"/Users/rae/Documents/crawled_pages/{page_count}_{safe_hostname}.html"
+           with open(filename, "w", encoding="utf-8") as f:
+             f.write(response.text)
            p = superdomain_count[superdomain]
            s = len(superdomain_subdomains[superdomain])
            combined_score=1/log2(p+2)+1/log2(s+2)
            priority=-combined_score #negate so it's popped first?
-           pq.put((priority,url))
+           pq.put((priority,1,url))
            print(f"\nHow many items are in the queue? {pq.qsize()}")
     
 while not pq.empty():
-    priority,url = pq.get()
-    print("DEQUEUED:", priority, url)   # add this
+    priority,depth,url = pq.get()
+    print("DEQUEUED:", priority,depth,url)   # add this
     hostname = urlparse(url).netloc
     result=tldextract.extract(hostname)
     superdomain=result.registered_domain
     if superdomain in visited_domains_bf:
         continue
     visited_domains_bf.add(superdomain)
+    rp=get_robots_parser(hostname)
+    if rp is not None and not rp.can_fetch("*", url):
+        print("Blocked by robots.txt ",url)
+        continue
     #Try to download pages in html
     try: 
         response=requests.get(url,timeout=5)
-        with open(f"/Users/rae/Documents/source1.html", "w",encoding="utf-8") as f:
-                    f.write(response.text)
     except requests.exceptions.RequestException as e:
             print("Request failed:", e)
             continue
@@ -119,7 +132,7 @@ while not pq.empty():
                     s=len(superdomain_subdomains[new_superdomain])
                     combined_score=1/log2(p+2)+1/log2(s+2)
                     new_priority = -combined_score
-                    pq.put((new_priority,new_url))
+                    pq.put((new_priority,depth+1,new_url))
     
 print("Crawling complete.")
 print("Total unique domains visited:", len(visited_domains_bf))
