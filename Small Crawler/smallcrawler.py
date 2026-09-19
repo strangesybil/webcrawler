@@ -6,10 +6,29 @@ from urllib.parse import urljoin, urlparse
 from math import log2
 import tldextract 
 from pybloom_live import BloomFilter 
+from urllib.robotparser import RobotFileParser
+
+robots_cache = {}
+
+def get_robots_parser(hostname):
+    if hostname in robots_cache: 
+          return robots_cache[hostname]
+
+    rp=RobotFileParser()
+    robots_url = f"https://{hostname}/robots.txt"
+    try: 
+        rp.set_url(robots_url)
+        rp.read()
+    except Exception as e: 
+          print(f"Could not fetch robots.txt for {hostname}:{e}")
+          rp=None #no restrictions
+
+    robots_cache[hostname] = rp
+    return rp
 
 headers = {
     "User-Agent": "RaeCrawler/1.0 (NYU student project)"
-}
+} 
 
 #Initialize the queue
 pq= PriorityQueue() #The queue of URLs to crawl
@@ -62,7 +81,7 @@ while not pq.empty():
     visited_domains_bf.add(superdomain)
     #Try to download pages in html
     try: 
-        response=requests.get(url,timeout=10)
+        response=requests.get(url,timeout=5)
         with open(f"/Users/rae/Documents/source1.html", "w",encoding="utf-8") as f:
                     f.write(response.text)
     except requests.exceptions.RequestException as e:
