@@ -1,5 +1,7 @@
 import requests
+import time
 import os
+from datetime import datetime
 from bs4 import BeautifulSoup
 from queue import PriorityQueue
 from collections import defaultdict
@@ -13,6 +15,7 @@ from concurrent.futures import ThreadPoolExecutor
 robots_cache = {}
 NUM_WORKERS = 20
 
+#Handle robots
 def get_robots_parser(hostname):
     if hostname in robots_cache: 
           return robots_cache[hostname]
@@ -35,12 +38,15 @@ headers = {
 
 #Initialize the queue
 pq= PriorityQueue() #The queue of URLs to crawl
-visited_domains_bf=BloomFilter(capacity=10000, error_rate=0.01)#set of domains that have been visited - look at data structures that are thread safe, Bloomfilter, scalable, 10,000 
+visited_domains_bf=BloomFilter(capacity=20000, error_rate=0.01)#set of domains that have been visited - look at data structures that are thread safe, Bloomfilter, scalable, 10,000 
 superdomain_count=defaultdict(int) #How many times have I seen this superdomain?
 superdomain_subdomains=defaultdict(set) #set of subdomains for each superdomain
-os.makedirs("/Users/rae/Documents/crawled_pages", exist_ok=True) 
-page_count=0 #How many pages crawled, incremented after successful fetch
 search_query=input("What are you looking for? ")
+safe_query = search_query.replace(" ", "_")
+run_folder = f"/Users/rae/Documents/crawled_pages/run_{safe_query}_{int(time.time())}"
+os.makedirs(run_folder, exist_ok=True)
+page_count=0 #How many pages crawled, incremented after successful fetch
+log_file = open(f"{run_folder}/crawl_log.txt", "a", encoding="utf-8")
 
 seed_urls = ["https://bing.com/search",
             "https://en.wikipedia.org/w/index.php?search=" + search_query]
@@ -51,13 +57,10 @@ for url in seed_urls:
     response = requests.get(
         url,
         params={"q": search_query},
-        headers={"User-Agent": "RaeCrawler/1.0 (student project)"}
+        headers={"User-Agent": "SmallCrawler/1.0 (student project)"}
     )
     print("Seed page status:", response.status_code)
 
-#Download pages in html 
-    with open(f"/Users/rae/Documents/source.html", "w",encoding="utf-8") as f:
-        f.write(response.text)
 
 #Use BeautifulSoup library to parse initial search results and extract links
     soup = BeautifulSoup(response.text, "html.parser")
@@ -69,15 +72,10 @@ for url in seed_urls:
            result=tldextract.extract(hostname)
            superdomain=result.registered_domain
            superdomain_count[superdomain]+=1
-           page_count+=1
-           safe_hostname=hostname.replace(".", "_").replace(":", "_")
-           filename = f"/Users/rae/Documents/crawled_pages/{page_count}_{safe_hostname}.html"
-           with open(filename, "w", encoding="utf-8") as f:
-             f.write(response.text)
            p = superdomain_count[superdomain]
            s = len(superdomain_subdomains[superdomain])
            combined_score=1/log2(p+2)+1/log2(s+2)
-           priority=-combined_score #negate so it's popped first?
+           priority=-combined_score #negate so it's popped first
            pq.put((priority,1,url))
            print(f"\nHow many items are in the queue? {pq.qsize()}")
     
@@ -87,9 +85,9 @@ while not pq.empty():
     hostname = urlparse(url).netloc
     result=tldextract.extract(hostname)
     superdomain=result.registered_domain
-    if superdomain in visited_domains_bf:
+    if url in visited_domains_bf:
         continue
-    visited_domains_bf.add(superdomain)
+    visited_domains_bf.add(url)
     rp=get_robots_parser(hostname)
     if rp is not None and not rp.can_fetch("*", url):
         print("Blocked by robots.txt ",url)
@@ -103,7 +101,11 @@ while not pq.empty():
             #Only count successful responses (status code 200) for scoring
     if response.status_code != 200:
                 print("Failed.")
+                timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+                log_file.write(f"URL: {url}, Size: {len(response.content)} bytes, Status: {response.status_code}, Depth: {depth}, Time: {timestamp}\n")
+                print("Failed.")
                 continue 
+    
 
     #Successful visit and download
     hostname=urlparse(url).netloc
@@ -111,6 +113,19 @@ while not pq.empty():
     superdomain=result.registered_domain
     superdomain_subdomains[superdomain].add(hostname)
     superdomain_count[superdomain]+=1
+
+    #save fetched page
+    page_count+=1
+    safe_hostname = hostname.replace(".", "_").replace(":", "_")
+    filename = f"{run_folder}/{page_count}_{safe_hostname}.html"
+    with open(filename, "w", encoding="utf-8") as f:
+        f.write(response.text)
+
+
+    #write log
+    timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+    size = len(response.content)
+    log_file.write(f"URL: {url}, Size: {size} bytes, Status: {response.status_code}, Depth: {depth}, Time: {timestamp}\n")
 
     #Parse the page and extract links
     soup = BeautifulSoup(response.text, "html.parser")
@@ -123,16 +138,18 @@ while not pq.empty():
                     new_hostname = urlparse(new_url).netloc
                     result=tldextract.extract(new_hostname)
                     new_superdomain=result.registered_domain
-                    if new_superdomain in visited_domains_bf:
-                        print("SKIPPING (already visited):", new_superdomain)
+                    if new_url in visited_domains_bf:
+                        print("SKIPPING (already visited):", new_url)
                         continue
-                    superdomain_subdomains[new_superdomain].add(new_hostname)
                     superdomain_count[new_superdomain]+=1
                     p = superdomain_count[new_superdomain]
                     s=len(superdomain_subdomains[new_superdomain])
                     combined_score=1/log2(p+2)+1/log2(s+2)
                     new_priority = -combined_score
                     pq.put((new_priority,depth+1,new_url))
+                    print(f"\nHow many items are in the queue? {pq.qsize()}")
+
     
 print("Crawling complete.")
 print("Total unique domains visited:", len(visited_domains_bf))
+log_file.close()
