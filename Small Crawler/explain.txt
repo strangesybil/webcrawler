@@ -1,0 +1,13 @@
+Description: 
+My crawler has two different parts (or uses): one is specialized for medical searches and one for general enquiries. It asks the user what they are looking for and then asks the user again which seed bank they would like to use. Using Beautiful Soup to extract links and then the tldextract and urllib libraries to extract the subdomains and superdomains. 
+
+My crawler then checks both how many times we've interacted with a superdomain (p) and how many times we've crawled unique subdomains from that specific superdomain (s). Then, to calculate priority I use the variable "combined_score" (1/log2(p+2)+1/log2(s+2)), adding 2 to the bases so mathematical errors don't occur when s and p are equal to zero. I then negate the result in order to get my priority queue to return the most novel superdomains first, in accordance with the assignment. 
+
+Bugs: Not really a bug per se, the crawler just won't crawl too many pages when user input is too specific ie. a person's name. 
+
+Additional Resources I used: 
+1.  https://github.com/john-kurkowski/tldextract
+2. https://www.hellointerview.com/community/questions/multithreaded-web-crawlercmbsl2nhd005107adsfu8ohme
+3. https://developer.mozilla.org/en-US/docs/Web/HTTP/Guides/MIME_types/Common_types
+4.https://docs.python.org/3/library/urllib.parse.html
+5. https://www.geeksforgeeks.org/python/bloom-filters-introduction-and-python-implementation/
